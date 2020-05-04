@@ -3,7 +3,7 @@ using FFTW, LinearAlgebra
 using Test
 
 include("../src/dependencies.jl")
-include("../models/WhithamGreenNaghdiGPU.jl")
+include("../src/models/WhithamGreenNaghdiGPU.jl")
 
 function run_cpu( param )
 
@@ -12,16 +12,13 @@ function run_cpu( param )
     v = zero(η)  # Initial data
     init = Init(mesh, η, v)
     times = Times(param.dt, param.T)
-	model = WhithamGreenNaghdi(param; iterate=true)
+    model = WhithamGreenNaghdi(param; iterate=true)
     solver = RK4(param;model= model)
     data  = Data(mapto(model, init))
     U = copy(last(data.U))
     dt = times.dt
-
-	problem = Problem(model, init, param)
-
-	solve!( problem )
-
+    problem = Problem(model, init, param)
+    solve!( problem )
     real(problem.data.U)
 
 end
@@ -33,16 +30,13 @@ function run_gpu( param )
     v = zero(η)  # Initial data
     init = Init(mesh, η, v)
     times = Times(param.dt, param.T)
-	model = WhithamGreenNaghdiGPU(param)
+    model = WhithamGreenNaghdiGPU(param)
     solver = RK4(param;model= model)
     data  = Data(mapto(model, init))
     U = copy(last(data.U))
     dt = times.dt
-
-	problem = Problem(model, init, param)
-
-	solve!( problem )
-
+    problem = Problem(model, init, param)
+    solve!( problem )
     real(problem.data.U)
 
 end
@@ -50,10 +44,10 @@ end
 param = (
         μ = 1,
         ϵ = 1,
-        N = 1024,       # number of collocation points
+        N = 2^11,       # number of collocation points
         L = 10π,        # mesh of size 2L
-        T = 0.002,        # final time
-        dt = 0.0001,    # timestep
+        T = 1.0,        # final time
+        dt = 0.001,    # timestep
         ns = 1,         # stores data every ns time steps
       )
 
