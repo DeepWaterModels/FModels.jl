@@ -1,7 +1,9 @@
 using ProgressMeter
 using FFTW, LinearAlgebra
 using Plots
-using JLD
+using FileIO
+using JLD2
+using Test
 
 abstract type AbstractModel end
 abstract type TimeSolver    end
@@ -68,7 +70,7 @@ end
 Runge-Kutta fourth order solver.
 
 """
-mutable struct RK4 <: TimeSolver
+struct RK4 <: TimeSolver
 
     Uhat :: Array{ComplexF64,2}
     dU   :: Array{ComplexF64,2}
@@ -92,34 +94,34 @@ function step!(s  :: RK4,
                dt :: Float64)
 
     
-    @inbounds for i in eachindex(U)
+    @simd for i in eachindex(U)
         s.Uhat[i] = U[i]
     end
 
     f!( s.Uhat )
 
-    @inbounds for i in eachindex(U)
+    @simd for i in eachindex(U)
         s.dU[i]   = s.Uhat[i]
         s.Uhat[i] = U[i] + dt/2 * s.Uhat[i]
     end
 
     f!( s.Uhat )
 
-    @inbounds for i in eachindex(U)
+    @simd for i in eachindex(U)
         s.dU[i]   += 2 * s.Uhat[i]
         s.Uhat[i]  = U[i] + dt/2 * s.Uhat[i]
     end
 
     f!( s.Uhat )
 
-    @inbounds for i in eachindex(U)
+    @simd for i in eachindex(U)
         s.dU[i]   += 2 * s.Uhat[i]
         s.Uhat[i]  = U[i] + dt * s.Uhat[i]
     end
 
     f!( s.Uhat )
 
-    @inbounds for i in eachindex(U)
+    @simd for i in eachindex(U)
         s.dU[i] += s.Uhat[i]
         U[i]    += dt/6 * s.dU[i]
     end
@@ -148,7 +150,7 @@ end
     Matsuno(params)
 
 """
-mutable struct Matsuno <: AbstractModel
+struct Matsuno <: AbstractModel
 
     label    :: String
     datasize :: Int
@@ -157,6 +159,8 @@ mutable struct Matsuno <: AbstractModel
     H        :: Array{ComplexF64,1}
     Π⅔       :: BitArray{1}
     ϵ        :: Float64
+    hold     :: Vector{ComplexF64}
+    uold     :: Vector{ComplexF64}
     hnew     :: Vector{ComplexF64}
     unew     :: Vector{ComplexF64}
     I₀       :: Vector{ComplexF64}
@@ -177,6 +181,8 @@ mutable struct Matsuno <: AbstractModel
         H        = -1im * sign.(mesh.k) # Hilbert transform
         Π⅔       = Γ .< mesh.kmax * 2/3 # Dealiasing low-pass filter
 
+        hold = zeros(ComplexF64, mesh.N)
+        uold = zeros(ComplexF64, mesh.N)
         hnew = zeros(ComplexF64, mesh.N)
         unew = zeros(ComplexF64, mesh.N)
 
@@ -188,7 +194,7 @@ mutable struct Matsuno <: AbstractModel
         Px  = plan_fft(hnew; flags = FFTW.MEASURE)
 
         new(label, datasize, Γ, Dx, H, Π⅔, ϵ,
-            hnew, unew, I₀, I₁, I₂, I₃, Px)
+            hold, uold, hnew, unew, I₀, I₁, I₂, I₃, Px)
     end
 end
 
@@ -196,58 +202,60 @@ end
 function (m::Matsuno)(U::Array{ComplexF64,2})
 
 
-    @inbounds for i in eachindex(m.hnew)
+    @simd for i in eachindex(m.hnew)
+        m.hold[i] = U[i,1]
+        m.uold[i] = U[i,2]
         m.hnew[i] = m.Γ[i] * U[i,1]
     end
 
     ldiv!(m.unew, m.Px, m.hnew )
 
-    @inbounds for i in eachindex(m.hnew)
-        m.hnew[i] = m.Dx[i] * U[i,1]
+    @simd for i in eachindex(m.hnew)
+        m.hnew[i] = m.Dx[i] * m.hold[i]
     end
 
     ldiv!(m.I₁, m.Px, m.hnew)
 
-    @inbounds for i in eachindex(m.unew)
+    @simd for i in eachindex(m.unew)
         m.unew[i] *= m.I₁[i]
     end
 
     mul!(m.I₁, m.Px, m.unew)
 
-    @inbounds for i in eachindex(m.hnew)
+    @simd for i in eachindex(m.hnew)
         m.I₁[i] = m.I₁[i] * m.ϵ * m.Π⅔[i] - m.hnew[i]
     end
 
-    ldiv!(m.hnew, m.Px, view(U,:,1))
-    ldiv!(m.unew, m.Px, view(U,:,2))
+    ldiv!(m.hnew, m.Px, m.hold)
+    ldiv!(m.unew, m.Px, m.uold)
 
-    @inbounds for i in eachindex(m.hnew)
+    @simd for i in eachindex(m.hnew)
         m.I₂[i] = m.hnew[i] * m.unew[i]
     end
 
     mul!(m.I₃, m.Px, m.I₂)
 
-    @inbounds for i in eachindex(m.H)
+    @simd for i in eachindex(m.H)
         U[i,1]  = m.H[i] * U[i,2]
         m.I₀[i] = m.Γ[i] * U[i,2]
     end
 
     ldiv!(m.I₂, m.Px, m.I₀)
 
-    @inbounds for i in eachindex(m.hnew)
+    @simd for i in eachindex(m.hnew)
         m.I₂[i] *= m.hnew[i]
     end
 
     mul!(m.hnew, m.Px, m.I₂)
 
-    @inbounds for i in eachindex(m.unew)
+    for i in eachindex(m.unew)
         U[i,1] -= (m.I₃[i] * m.Dx[i] + m.hnew[i] * m.H[i]) * m.ϵ * m.Π⅔[i]
         m.I₃[i]  = m.unew[i]^2
     end 
 
     mul!(m.unew, m.Px, m.I₃)
 
-    @inbounds for i in eachindex(m.unew)
+    @simd for i in eachindex(m.unew)
         U[i,2]  =  m.I₁[i] - m.unew[i] * m.Dx[i] * m.ϵ/2 * m.Π⅔[i]
     end 
 
@@ -255,7 +263,7 @@ end
 
 
 
-function create_animation( mesh, times, data )
+function create_animation( model, mesh, times, data )
 
     prog = Progress(times.Nr,1)
 
@@ -272,7 +280,7 @@ function create_animation( mesh, times, data )
         plot!(pl[1,1], mesh.x, hr;
               ylims=(-0.6,1),
               title="physical space",
-              label=p.model.label)
+              label=model.label)
 
         plot!(pl[2,1], fftshift(mesh.k),
               log10.(1e-18.+abs.(fftshift(fft(hr))));
@@ -318,21 +326,14 @@ function main()
         for l in L
             step!(solver, model, U, dt)
         end
-        data[:,:,j] = U
     end
 
-    print("\n")
+    #save("uref.jld2", Dict("u" => U ))
+    ref = load("uref.jld2")
 
-    data
+    @test norm(U .- ref["u"]) ≈ 0 atol=1e-10
 
-    #Uref =  problem.data[end]
-    #save("reference.jld", "Uref", Uref)
-
-    #Uref = load("reference.jld", "Uref")
-
-    #println(norm(Uref .- data[end]))
-
-    # @time create_animation( problem, data )
+    #@time create_animation( model, mesh, times, data )
 
 end
 
