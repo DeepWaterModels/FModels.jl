@@ -3,9 +3,12 @@
 # 1) PlotSolitaryWaveWhithamBoussinesq() numerically computes the solitary wave of a Whitham-Boussinesq equation with prescribed velocity
 # 2) IntegrateSolitaryWaveWhithamBoussinesq() integrates the equation with time
 # #
-using ShallowWaterModels,FFTW,Plots;gr()
-#include("../src/dependencies.jl")
+@info "Define functions PlotSolitaryWaveWhithamBoussinesq(),IntegrateSolitaryWaveWhithamBoussinesq()"
 
+using ShallowWaterModels,FFTW,Plots;
+include("../src/models/WhithamBoussinesq.jl")
+include("../src/initialdata/SolitaryWaveWhithamBoussinesq.jl")
+include("../src/Figures.jl")
 
 #----
 """
@@ -97,7 +100,7 @@ function IntegrateSolitaryWaveWhithamBoussinesq()
 	problem = Problem(model, init, param);
 
 	solve!( problem )
-	ηf = mapfro(model,problem.data.U[end])[1]
+	ηf = model.mapfro(problem.data.U[end])[1]
 	p = plot(layout=(1,2))
 	plot!(p[1,1],mesh.x,[η ηf];
 	title="surface deformation",
@@ -107,5 +110,7 @@ function IntegrateSolitaryWaveWhithamBoussinesq()
 	label="")
 	display(p)
 
-	create_animation( problem )
+	anim = create_animation( problem )
+	gif(anim, fps=15)
 end
+nothing

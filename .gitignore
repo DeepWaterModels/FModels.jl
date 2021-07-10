@@ -8,9 +8,8 @@ Manifest.toml
 docs/build/
 docs/src/examples/
 docs/src/notebooks/
-examples/reference.jld
-test/problem1.jld
 examples/.ipynb_checkpoints/minimal_pierre-checkpoint.jl
-WWvsXX.gif
-WWvsXX.pdf
-anim.gif
+*.jld
+*.gif
+*.pdf
+*.svg

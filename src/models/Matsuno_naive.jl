@@ -1,29 +1,19 @@
-export Matsuno_naive,mapto,mapfro
-
+export Matsuno_naive
+using FFTW
 """
     Matsuno(params)
 
 """
 mutable struct Matsuno_naive <: AbstractModel
 
-    label   :: String
-	datasize:: Int
-	x   	:: Vector{Float64}
-    Γ   	:: Vector{Float64}
-    ∂ₓ      :: Vector{Complex{Float64}}
-    H       :: Vector{Complex{Float64}}
-    Π⅔      :: BitArray{1}
-    ϵ 		:: Float64
-    hnew    :: Vector{Complex{Float64}}
-    unew    :: Vector{Complex{Float64}}
-    I₁    :: Vector{Complex{Float64}}
-    I₂    :: Vector{Complex{Float64}}
-    I₃    :: Vector{Complex{Float64}}
+	label   :: String
+	f!		:: Function
+	mapto	:: Function
+	mapfro	:: Function
 
     function Matsuno_naive(param::NamedTuple)
 
 		label = "Matsuno naive"
-		datasize = 2
 		ϵ 	= param.ϵ
 		mesh = Mesh(param)
 		x   = mesh.x
@@ -39,42 +29,35 @@ mutable struct Matsuno_naive <: AbstractModel
         I₂ = zeros(Complex{Float64}, mesh.N)
         I₃ = zeros(Complex{Float64}, mesh.N)
 
-        new(label, datasize, x, Γ, ∂ₓ, H, Π⅔, ϵ,
-            hnew, unew, I₁, I₂, I₃ )
+
+		function f!(U)
+
+		   hnew .= ifft(U[:,1])
+		   unew .= ifft(U[:,2])
+		   I₃ .= fft(ifft((∂ₓ).*U[:,1]).*ifft((Γ).*U[:,1]))
+		   I₁ .= H.*U[:,2].-ϵ*Π⅔.*(H.*fft(hnew.*ifft(Γ.*U[:,2])).+∂ₓ.*fft(hnew.*unew))
+		   I₂ .= -(∂ₓ.*U[:,1])+ϵ*Π⅔.*(I₃-∂ₓ.*fft(unew.^2)/2)
+		   #
+		   U[:,1] .= I₁
+		   U[:,2] .= I₂
+
+		end
+
+		"""
+		    mapto(Matsuno, data)
+			the velocity should be zero
+
+		"""
+		function mapto(data::InitialData)
+
+			[Π⅔ .* fft(data.η(x)) Π⅔ .*fft(data.v(x))]
+
+		end
+
+		function mapfro(U)
+			real(ifft(U[:,1])),real(ifft(U[:,2]))
+		end
+
+		new(label, f!, mapto, mapfro )
     end
-end
-
-
-function (m::Matsuno_naive)(U::Array{Complex{Float64},2})
-
-   m.hnew .= ifft(U[:,1])
-   m.unew .= ifft(U[:,2])
-   m.I₃ .= fft(ifft((m.∂ₓ).*U[:,1]).*ifft((m.Γ).*U[:,1]))
-   m.I₁ .= m.H.*U[:,2].-m.ϵ*m.Π⅔.*(m.H.*fft(m.hnew.*ifft(m.Γ.*U[:,2])).+m.∂ₓ.*fft(m.hnew.*m.unew))
-   m.I₂ .= -(m.∂ₓ.*U[:,1])+m.ϵ*m.Π⅔.*(m.I₃-m.∂ₓ.*fft(m.unew.^2)/2)
-   #
-   U[:,1] .= m.I₁
-   U[:,2] .= m.I₂
-
-end
-
-"""
-    mapto(Matsuno, data)
-	the velocity should be zero
-
-"""
-function mapto(m::Matsuno_naive, data::InitialData)
-
-	[m.Π⅔ .* fft(data.η(m.x)) m.Π⅔ .*fft(data.v(m.x))]
-
-end
-
-"""
-    mapfro(Matsuno, data)
-
-"""
-function mapfro(m::Matsuno_naive,
-	       datum::Array{Complex{Float64},2})
-
-		   real(ifft(datum[:,1])),real(ifft(datum[:,2]))
 end

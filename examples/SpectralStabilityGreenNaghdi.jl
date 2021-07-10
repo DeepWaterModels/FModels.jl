@@ -1,9 +1,12 @@
 # #
 # Study of the spectral stability of the Serre-Green-Naghdi equations.
 # #
+@info "Define functions Spectrum,figspecCW,figspecSW"
 
-using ShallowWaterModels,LinearAlgebra,FFTW,ProgressMeter,Plots;gr()
-#include("../src/dependencies.jl")
+using ShallowWaterModels,LinearAlgebra,FFTW,ProgressMeter,Plots;
+include("../src/models/WhithamGreenNaghdi.jl")
+include("../src/initialdata/SolitaryWaveWhithamGreenNaghdi.jl")
+include("../src/initialdata/CnoidalWaveWhithamGreenNaghdi.jl")
 
 """
     `Spectrum(model,η,u,c,ν;kwargs)`

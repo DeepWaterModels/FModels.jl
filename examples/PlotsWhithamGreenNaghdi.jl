@@ -2,27 +2,31 @@
 # Reproduces the figures in the work of C. Klein and V. Duchêne
 # on the Serre-Green-Naghdi and Whitham-Green-Naghdi systems
 # #
-#export PlotSolitaryWaveWGN1,PlotSolitaryWaveWGN2,PlotSolitaryWaveWGN3,PlotJacobianWGN,IntegrateSolitaryWaveWGN,StabilitySolitaryWaveWGN,IntegrateWGN
+@info "Defines functions PlotSolitaryWaveWGN1,PlotSolitaryWaveWGN2,PlotSolitaryWaveWGN3,PlotJacobianWGN,IntegrateSolitaryWaveWGN,StabilitySolitaryWaveWGN,IntegrateWGN"
 
-using ShallowWaterModels,FFTW,Plots,LinearAlgebra,ProgressMeter;gr()
-#include("../src/dependencies.jl")
+using ShallowWaterModels,FFTW,Plots,LinearAlgebra,ProgressMeter;
+include("../src/models/WhithamGreenNaghdi.jl")
+include("../src/initialdata/SolitaryWaveWhithamGreenNaghdi.jl")
+include("../src/Figures.jl")
+include("../src/LoadSave.jl")
+using JLD
 
 #---- Figures 1 and 2
 """
 	`PlotSolitaryWaveWGN1(;kwargs)`
 
 First method to compute the WGN solitary wave.
-Uses GMRES-iterative method for the inversion of the Jacobian.
+Use GMRES-iterative method for the inversion of the Jacobian.
 
 Arguments are all optional:
 - `c` the velocity,
 - `N` the number of collocation points,
 - `L` the half-length of the mesh,
-- `sav` a string used to save the figure as a .pdf.
+- `name`: a string used to save the figure as a name.pdf.
 
-Use with `PlotSolitaryWaveWGN1()` or e.g. `PlotSolitaryWaveWGN1(c=1.1,N=2^8,L=10*π)`
+Return `(η,u,v,mesh)`, where `mesh.x` are the collocation points.
 """
-function PlotSolitaryWaveWGN1(;c=2,N=2^10,L=10*π,sav=[])
+function PlotSolitaryWaveWGN1(;c=2,N=2^10,L=10*π,name=nothing)
 	param = ( μ  = 1,
 			ϵ  = 1,
         	N  = N,
@@ -33,7 +37,7 @@ function PlotSolitaryWaveWGN1(;c=2,N=2^10,L=10*π,sav=[])
 	(η,u,v,mesh) = SolitaryWaveWhithamGreenNaghdi(
 				param; SGN = false,
 				method=2, α = 0,
-				tol =  1e-16, max_iter=10,
+				tol =  1e-14, max_iter=10,
 				ktol =0*1e-11, gtol = 1e-16,
 				iterative = true, q=1,
 				verbose = false)
@@ -52,7 +56,8 @@ function PlotSolitaryWaveWGN1(;c=2,N=2^10,L=10*π,sav=[])
 	  title="frequency",
 	  label=["WGN" "SGN"])
 	display(plt)
-	if sav != [] savefig(string(sav,".pdf")); end
+	if name != nothing savefig(string(name,".pdf")); end
+	return (η,u,v,mesh)
 end
 
 
@@ -61,10 +66,10 @@ end
 	PlotSolitaryWaveWGN2(;kwargs)
 
 Second method to compute the WGN solitary wave. Same as `PlotSolitaryWaveWGN1`, but
-uses non-iterative method for the inversion of the Jacobian.
+use non-iterative method for the inversion of the Jacobian.
 To be used with higher values of the velocity (default is `c=20`).
 """
-function PlotSolitaryWaveWGN2(;c=20,L=10*π,N=2^10,sav=[])
+function PlotSolitaryWaveWGN2(;c=20,L=10*π,N=2^10,name=nothing)
 	param = ( μ  = 1,
 		ϵ  = 1,
       	N  = N,
@@ -92,18 +97,19 @@ function PlotSolitaryWaveWGN2(;c=20,L=10*π,N=2^10,sav=[])
 	  title="frequency",
 	  label=["WGN" "SGN"])
     display(plt)
-	if sav != [] savefig(string(sav,".pdf")); end
+	if name != nothing savefig(string(name,".pdf")); end
+	return (η,u,v,mesh)
 end
 #---- Figure 4
 """
 	PlotSolitaryWaveWGN3(;kwargs)
 
 Third method to compute the WGN solitary wave. Same as `PlotSolitaryWaveWGN1`, but
-- uses non-iterative method for the inversion of the Jacobian; and
-- uses a rescaled equation.
+- use non-iterative method for the inversion of the Jacobian; and
+- use a rescaled equation.
 To be used with highest values of the velocity (default is `c=100`).
 """
-function PlotSolitaryWaveWGN3(;c=100,L=10*π,N=2^10,sav=[])
+function PlotSolitaryWaveWGN3(;c=100,L=10*π,N=2^10,name=nothing)
 	param = ( μ  = 1,
 		ϵ  = 1,
       	N  = N,
@@ -130,7 +136,8 @@ function PlotSolitaryWaveWGN3(;c=100,L=10*π,N=2^10,sav=[])
 	  title="frequency",
 	  label="WGN")
 	display(plt)
-	if sav != [] savefig(string(sav,".pdf")); end
+	if name != nothing savefig(string(name,".pdf")); end
+	return (η,u,v,mesh)
 end
 
 #------ Figure 6
@@ -143,12 +150,11 @@ Arguments are all optional:
 - `c` the velocity,
 - `N` the number of collocation points,
 - `L` the half-length of the mesh,
-- `SGN` uses SGN if `true`, and WGN if `false` (default is `false`),
-- `sav` a string used to save the figure as a .pdf.
+- `SGN`: use SGN if `true`, and WGN if `false` (default is `false`),
+- `name`: a string used to save the figure as a name.pdf.
 
-Use with `PlotJacobianWGN()` or e.g. `PlotJacobianWGN(c=20,N=2^10,L=10*π,SGN=true)`
 """
-function PlotJacobianWGN(;c=20,L=10*π,N=2^10,SGN=false,sav=[])
+function PlotJacobianWGN(;c=20,L=10*π,N=2^10,SGN=false,name=nothing)
 	ϵ,μ,α=1,1,0
 
 	(η,u,v,mesh) = SolitaryWaveWhithamGreenNaghdi(
@@ -193,7 +199,8 @@ function PlotJacobianWGN(;c=20,L=10*π,N=2^10,SGN=false,sav=[])
 		title = "non-diagonal part")
 	display(plt)
 
-	if sav != [] savefig(string(sav,".pdf")); end
+	if name != nothing savefig(string(name,".pdf")); end
+	return (Jac,Jacstar,FFT,IFFT)
 end
 
 #---- Figures 7 and 8
@@ -206,15 +213,15 @@ Arguments are all optional:
 - `c` the velocity,
 - `N` the number of collocation points,
 - `L` the half-length of the mesh,
-- `T` final time of integration,
-- `dt` timestep,
-- `SGN` uses SGN if `true`, and WGN if `false` (default is `false`),
-- `sav` a string used to save raw data and the figure as a .pdf.
+- `T` the final time of integration,
+- `dt` the timestep,
+- `SGN`: use SGN if `true`, and WGN if `false` (default is `false`),
+- `name`: a string used to save raw data and the figure.
 
-Use with `IntegrateSolitaryWaveWGN()` or e.g. `IntegrateSolitaryWaveWGN(c=2,N=2^9,L=10*π,T=1,dt=1/2000,SGN=true)`
+Return `problem` of type `Problem`, containing all the information.
 """
-function IntegrateSolitaryWaveWGN(;SGN=false,c=2,N=2^10,L=10*π,T=1,dt=1/2000,sav=[])
-	if sav != [] ns=floor(Int,max(1,T/dt/100)) else ns=1 end
+function IntegrateSolitaryWaveWGN(;SGN=false,c=2,N=2^10,L=10*π,T=1,dt=1/2000,name=nothing)
+	if name != nothing ns=floor(Int,max(1,T/dt/100)) else ns=1 end
 
 	param = ( μ  = 1, ϵ  = 1, c = c,
 				N  = N,
@@ -228,55 +235,49 @@ function IntegrateSolitaryWaveWGN(;SGN=false,c=2,N=2^10,L=10*π,T=1,dt=1/2000,sa
 				param; x₀ = c*T, SGN = true, max_iter=0)
 	else
 		(ηinit,uinit,vinit,mesh) = SolitaryWaveWhithamGreenNaghdi(
-				param; method = 3, SGN = false, max_iter=10,α=1,verbose=true)
+				param; method = 3, SGN = false, max_iter=10,α=1,verbose=true, tol=1e-12)
 	  	(ηfin,ufin,vfin) = SolitaryWaveWhithamGreenNaghdi(
-				param; x₀ = c*T, method = 3, SGN = false, max_iter=10,α=1,verbose=true)
+				param; x₀ = c*T, method = 3, SGN = false, max_iter=10,α=1,verbose=true, tol=1e-12)
 	end
 	init     = Init(mesh,ηinit,vinit)
-	model = WhithamGreenNaghdi(param;SGN=SGN, ktol=0, iterate=true, precond = false)
+	model = WhithamGreenNaghdi(param;SGN=SGN, ktol=0, iterate=true, precond = true)
 	problem = Problem(model, init, param)
 	solve!( problem )
 
-	(ηcomp,vcomp,ucomp)   =  mapfrofull(model,last(problem.data.U))
+	(ηcomp,vcomp,ucomp)   =  model.mapfrofull(last(problem.data.U))
 
 	E(η,u,v) = sum(η.^2 .+ (1 .+ param.ϵ*η).*u.*v)
-	# E1(η,u) = sum(η.^2 .+ (1 .+ param.ϵ*η).*u.^2 .+param.μ/3*(1 .+ param.ϵ*η).^3 .*(Dx(u).^2))
-	# E2(η,u) = sum(η.^2 .+ (1 .+ param.ϵ*η).*u.^2 .-param.μ/3*u.*Dx((1 .+ param.ϵ*η).^3 .*(Dx(u))))
 	dE(η1,u1,v1,η2,u2,v2) = sum(η1.^2-η2.^2) + sum((1 .+ param.ϵ*η1).*u1.*v1 - (1 .+ param.ϵ*η2).*u2.*v2)
-	# dE1(η1,u1,η2,u2) = sum(η1.^2-η2.^2) + sum((1 .+ param.ϵ*η1).*u1.^2 - (1 .+ param.ϵ*η2).*u2.^2) -
-	# 		param.μ/3*sum(u1.*Dx((1 .+ param.ϵ*η1).^3 .*(Dx(u1)))-u2.*Dx((1 .+ param.ϵ*η2).^3 .*(Dx(u2))))
-	# dE2(η1,u1,η2,u2) = sum(η1.^2-η2.^2) + sum((1 .+ param.ϵ*η1).*u1.^2 - (1 .+ param.ϵ*η2).*u2.^2) +
-	# 		param.μ/3*sum((1 .+ param.ϵ*η1).^3 .*(Dx(u1).^2) - (1 .+ param.ϵ*η2).^3 .*(Dx(u2).^2))
 
-	print(string("normalized energy difference: ",dE(ηinit,uinit,vinit,ηcomp,ucomp,vcomp)/E(ηinit,uinit,vinit),"\n"))
-	# print(string("normalized error: ",dE1(ηGN,uGN,ηfin,ufin)/E1(ηGN,uGN),"\n"))
-	# print(string("normalized error: ",dE2(ηGN,uGN,ηfin,ufin)/E2(ηGN,uGN),"\n"))
+	print(string("absolute energy difference: ",dE(ηinit,uinit,vinit,ηcomp,ucomp,vcomp),"\n"))
+	print(string("relative energy difference: ",dE(ηinit,uinit,vinit,ηcomp,ucomp,vcomp)/E(ηinit,uinit,vinit),"\n"))
 
 	plt = plot(layout=(1,2))
-	plot!(plt[1,1],fftshift(mesh.k),fftshift(log10.(abs.(fft(vinit))));
+	plot!(plt[1,1],fftshift(mesh.k),fftshift(log10.(abs.(fft(uinit))));
 			title = "frequency",
 			label = "initial",
 			xlabel="x",
-			ylabel="v")
-	plot!(plt[1,1],fftshift(mesh.k),fftshift(log10.(abs.(fft(vcomp))));
+			ylabel="u")
+	plot!(plt[1,1],fftshift(mesh.k),fftshift(log10.(abs.(fft(ucomp))));
 			label = "final")
-	plot!(plt[1,2],mesh.x,vfin-vcomp;
+	plot!(plt[1,2],mesh.x,ufin-ucomp;
 			title = string("error at time t=",problem.times.tfin),
 			label="difference",
 			xlabel="x",
-			ylabel="v")
+			ylabel="δu")
 	display(plt)
 
-	if sav != []
-		savefig(string(sav,".pdf"));
-		create_animation(problem;str=string(sav,"-anim.pdf"))
+	if name != nothing
+		savefig(string(name,".pdf"));
+		create_animation(problem;name=string(name,"-anim.pdf"))
 		plot_solution(problem)
-		savefig(string(sav,"-final.pdf"));
-		save(problem,sav);
+		savefig(string(name,"-final.pdf"));
+		save(problem,name);
 	end
+	return problem
 end
 
-#------ Figures 9 to 11
+#------ Figures 9 to 15
 
 """
 	`StabilitySolitaryWaveWGN(;kwargs)`
@@ -284,56 +285,63 @@ end
 Integrates in time a pertubed SGN or WGN solitary wave.
 
 Arguments are all optional:
-- `p` (1,2,3 or 4) is the type of perturbation,
+- `p` (1,2, or a real) is the type of perturbation:
+	1. If `p=1`, then `u` is multiplied by `λ = 0.99`
+	2. If `p=2`, then `u` is multiplied by `λ = 1.01`
+	3. Otherwise, one adds `p exp(-x^2)` to `u`
 - `c` the velocity,
 - `N` the number of collocation points,
 - `L` the half-length of the mesh,
-- `T` final time of integration,
-- `dt` timestep,
-- `SGN` uses SGN if `true`, and WGN if `false` (default is `false`),
-- `sav` a string used to save raw data and the figure as a .pdf.
+- `T` the final time of integration,
+- `dt` the timestep,
+- `SGN`: use SGN if `true`, and WGN if `false` (default is `false`),
+- `iterate`: use GMRES if `true`, and LU decomposition otherwise (default is `true`),
+- `precond` gives some choice in the preconditioner for GMRES,
+- `dealias` use 2/3 dealiasing rule if `1`, (default is `0`, i.e. no dealiasing),
+- `name`: a string used to save raw data and the figures.
 
-Use with `StabilitySolitaryWaveWGN()` or e.g. `IntegrateSolitaryWaveWGN(c=4,p=4,SGN=true)`
-
+Return `problem` of type `Problem`, containing all the information.
 """
-function StabilitySolitaryWaveWGN(;p=2,c=2,N=2^10,L=10*π,T=10,dt=10/10^4,SGN=false,sav=[])
-	if sav != [] ns=floor(Int,max(1,T/dt/100)) else ns=1 end
+function StabilitySolitaryWaveWGN(;p=2,c=2,N=2^10,L=10*π,T=10,dt=10/10^4,SGN=false,precond=true,iterate=true,dealias=0,name=nothing)
+	if name != nothing ns=floor(Int,max(1,T/dt/100)) else ns=1 end
 	if p == 1
 		λ = 0.99
 	elseif p == 2
 		λ = 1.01
-	elseif p == 3
-		λ = -0.01
-	elseif p == 4
-		λ = +0.01
-	else error("p must be in {1,2,3,4} ")
+	else
+		λ = p
 	end
+
 	param = ( μ = 1, ϵ = 1, c = c, λ = λ,
 				N  = N,
 	            L  = L,
 	            T  = T,
 	            dt = dt, ns=ns,
-				dealias = 0,
+				dealias = dealias,
 				SGN=SGN,
 				ktol=0*1e-6,
 				gtol=1e-12,
-				iterate=true,
-				precond = false)
+				iterate=iterate)
 
 	if SGN == true
 		(η,u,v,mesh) = SolitaryWaveWhithamGreenNaghdi(
 				param; SGN = true, max_iter=0)
 	else
 		(η,u,v,mesh) = SolitaryWaveWhithamGreenNaghdi(
-				param; method = 3, SGN = false, max_iter=10,α=1,verbose=true)
-	end
-
-	if p == 1 || p == 2
-		u= λ*u
-	elseif p == 3 || p == 4
-		u .+= λ*exp.(-mesh.x.^2)
+				param; method = 3, tol=1e-14, SGN = false, max_iter=10,α=1,verbose=true)
 	end
 	k = mesh.k
+
+	if precond > 0
+		precond = Diagonal( 1 .+ μ/3*(precond^2*k).^2 )
+	elseif precond < 0
+		precond = Diagonal( (1 .+ μ/3000*k.^8)  )
+	end
+	if p == 1 || p == 2
+		u= λ*u
+	else
+		u .+= λ*exp.(-mesh.x.^2)
+	end
 	if SGN == true
 		F₀ = sqrt(param.μ)*1im * k
 	else
@@ -346,26 +354,18 @@ function StabilitySolitaryWaveWGN(;p=2,c=2,N=2^10,L=10*π,T=10,dt=10/10^4,SGN=fa
 	v = u - 1/3 ./h .* (DxF(h.^3 .*DxF(u)))
 
 	init = Init(mesh,η,v)
-	model = WhithamGreenNaghdi(param;SGN=param.SGN, dealias = param.dealias, ktol=param.ktol, gtol=param.gtol, iterate=param.iterate, precond = param.precond)
+	model = WhithamGreenNaghdi(param;SGN=param.SGN, dealias = param.dealias, ktol=param.ktol, gtol=param.gtol, iterate=param.iterate, precond = precond)
 	problem = Problem(model, init, param)
 	solve!( problem )
 
-	if sav != [] save(problem,sav); end
+	if name != nothing save(problem,name); end
 
-	(ηfin,vfin,ufin)   =  mapfrofull(model,last(problem.data.U))
+	(ηfin,vfin,ufin)   =  model.mapfrofull(last(problem.data.U))
 
-
-	# E(η) = sum(η.^2 ./ (1 .+ η) .+ param.μ/3*(1 .+ param.ϵ*η).^3 .*(Dx(η ./ (1 .+ η)).^2))
 	E(η,u,v) = sum(η.^2 .+ (1 .+ param.ϵ*η).*u.*v)
-	# E(η,u) = sum(η.^2 .+ (1 .+ param.ϵ*η).*u.^2 .+param.μ/3*(1 .+ param.ϵ*η).^3 .*(Dx(u).^2))
 	dE(η1,u1,v1,η2,u2,v2) = sum(η1.^2-η2.^2) + sum((1 .+ param.ϵ*η1).*u1.*v1 - (1 .+ param.ϵ*η2).*u2.*v2)
-	# dE(η1,u1,η2,u2) = sum(η1.^2-η2.^2) + sum((1 .+ param.ϵ*η1).*u1.^2 - (1 .+ param.ϵ*η2).*u2.^2) -
-	# 		param.μ/3*sum(u1.*Dx((1 .+ param.ϵ*η1).^3 .*(Dx(u1)))-u2.*Dx((1 .+ param.ϵ*η2).^3 .*(Dx(u2))))
 
 	print(string("normalized error: ",dE(η,u,v,ηfin,ufin,vfin)/E(η,u,v),"\n"))
-	# print(string("normalized error: ",dE(ηGN,uGN,ηfin,ufin)/E(ηGN,uGN),"\n"))
-	# print(string("normalized error: ",dE(ηinit,uinit,vinit,ηfin,ufin,vfin)/E(ηinit,uinit,vinit),"\n"))
-	# print(string("normalized error: ",dE(ηinit,uinit,ηfin,ufin)/E(ηinit,uinit),"\n"))
 
 	plt = plot(layout=(1,2))
 	plot!(plt[1,1],fftshift(mesh.k),fftshift(log10.(abs.(fft(η))));
@@ -379,51 +379,53 @@ function StabilitySolitaryWaveWGN(;p=2,c=2,N=2^10,L=10*π,T=10,dt=10/10^4,SGN=fa
 	plot!(plt[1,2],mesh.x,[u ufin];
 			label=["u initial" "u final"])
 	display(plt)
-	if sav != [] savefig(string(sav,"-final.pdf")); end
+	if name != nothing savefig(string(name,"-final.pdf")); end
 
 	ts = problem.times.ts
 	x = mesh.x
 	k = mesh.k
-	us=zeros(param.N,length(ts));
-	# h = similar(Complex.(x))
-	# fftu= Complex.(h)
-	# Precond = Diagonal( 1 .+ param.μ*k.^2 )
-	#
-	# function compute(fftη,fftv)
-	# 	h .= 1 .+ ifft(fftη)
-	# 	function LL(hatu)
-	# 		hatu- param.μ/3 *fft( 1 ./h .* ifft( 1im*k .* fft( h.^3 .* ifft( 1im*k .* hatu ) ) ) )
-	# 	end
-	# 	fftu.= gmres( LinearMap(LL, length(h); issymmetric=false, ismutating=false) , fftv ;
-	# 				Pl = Precond )
-	# 	return real.(ifft(fftu))
-	# end
-	@showprogress 1 for i in 1:length(ts)
-		#us[:,i].=compute(problem.data.U[i][:,1],problem.data.U[i][:,2])
-		us[:,i].=real.(ifft(problem.data.U[i][:,1]))
+	X=interpolate(mesh,real.(ifft(problem.data.U[1][:,1])))[1].x
+	zs=zeros(length(X),length(ts));
+	for i in 1:length(ts)
+		zs[:,i].=interpolate(mesh,real.(ifft(problem.data.U[i][:,1])))[2]
 	end
 
-
 	plt = plot()
-	scatter!(plt,ts,maximum(abs.(us),dims=1)',
+	scatter!(plt,ts,maximum(abs.(zs),dims=1)',
 			title="maximum of surface deformation",
 			label="",
 			xlabel="time t")
 	display(plt)
 
-	if sav != []
-		savefig(string(sav,"-norm.pdf"));
+
+	if name != nothing
+		savefig(string(name,"-znorm.pdf"));
+
+		us=zeros(length(X),length(ts));
+		@showprogress 1 "Computing v..." for i in 1:length(ts)
+			us[:,i].=interpolate(mesh,model.mapfro(problem.data.U[i])[2])[2]
+		end
+		plt = plot()
+		scatter!(plt,ts,maximum(abs.(us),dims=1)',
+				title="maximum of velocity",
+				label="",
+				xlabel="time t")
+		display(plt)
+		savefig(string(name,"-vnorm.pdf"));
+
+
 		plt=plot()
 		my_cg = cgrad([:blue,:green])
-		surface!(plt,x,ts,us',view_angle=(20,30), color = my_cg)
+		#surface!(plt,X,ts,zs',view_angle=(20,30), color = my_cg)
 		display(plt)
-		savefig(string(sav,"-evol.pdf"));
+		savefig(string(name,"-evol.pdf"));
 
-		create_animation(problem;str=string(sav,"-anim.pdf"))
+		create_animation(problem;name=string(name,"-anim"))
 	end
+	return problem
 end
 
-#---- Figures 14 to end
+#---- Figures 16 to end
 """
 	`IntegrateWGN(scenario;kwargs)
 
@@ -438,18 +440,19 @@ Other arguments are optional:
 	- the minimal depth if `scenario=3`
 - `N` the number of collocation points,
 - `L` the half-length of the mesh,
-- `T` final time of integration,
-- `dt` timestep,
+- `T` the final time of integration,
+- `dt` the timestep,
+- `SGN`: use SGN if `true`, and WGN if `false` (default is `false`),
+- `iterate`: use GMRES if `true`, and LU decomposition otherwise (default is `true`),
+- `precond` gives some choice in the preconditioner for GMRES,
 - `dealias`: dealiasing with Orlicz rule `1-dealias/(dealias+2)` (default is `0`, i.e. no dealiasing);
-- `SGN` uses SGN if `true`, and WGN if `false` (default is `false`),
-- `sav` a string used to save raw data and the figure as a .pdf.
+- `name`: a string used to save raw data and the figures.
 
-Use with `IntegrateWGN(s)` or e.g. `IntegrateWGN(3;δ=0.1,SGN=true,N=2^12,L=3*π,T=0.6,dt=0.6/10^4,dealias=1)`
-
+Return `(problem,plt)` where `problem` contains all the information and `plt` a plot of the final time solution.
 """
-function IntegrateWGN(scenario;δ=0.1,N=2^11,L=3*π,T= 5,dt = 5/10^4,SGN=false,dealias=0,sav=[])
+function IntegrateWGN(scenario;δ=0.1,N=2^11,L=3*π,x₀=-3,T= 5,dt = 5/10^4,SGN=false,dealias=0,iterate=true,precond=true,name=nothing)
 
-	if sav != [] ns=floor(Int,max(1,T/dt/100)) else ns=1 end
+	if name != nothing ns=floor(Int,max(1,T/dt/100)) else ns=1 end
 	if scenario == 1 || scenario == 2
 		μ  = δ^2
 	else
@@ -461,8 +464,16 @@ function IntegrateWGN(scenario;δ=0.1,N=2^11,L=3*π,T= 5,dt = 5/10^4,SGN=false,d
 				ns=ns )
 
 	mesh=Mesh(param)
+	k=mesh.k
+	if precond > 0
+		precond = Diagonal( 1 .+ μ/3*(precond^2*k).^2 )
+	elseif precond < 0
+		precond = Diagonal( (1 .+ μ/3000*k.^8)  )
+	end
+
+
 	if scenario == 1
-		η= exp.(-(mesh.x .+3).^2)
+		η= exp.(-(mesh.x .-x₀).^2)
 		u= 2*sqrt.(1 .+ param.ϵ*η) .-2
 	elseif scenario == 2
 		function krasny!(v)
@@ -472,7 +483,7 @@ function IntegrateWGN(scenario;δ=0.1,N=2^11,L=3*π,T= 5,dt = 5/10^4,SGN=false,d
 		Dx(v) = real.(ifft( 1im*mesh.k.* krasny!(fft(v))))
 		Dx2(v) = Dx(Dx(v))
 		ϵ = param.ϵ;μ=param.μ;
-		w = - (mesh.x).* exp.(-(mesh.x).^2)
+		w = - (mesh.x.-x₀).* exp.(-(mesh.x.-x₀).^2)
 		u = w .+ μ/12 *Dx2(w) .+ μ*ϵ/6* w.*Dx2(w)
 		η = u .+ ϵ/4*u.^2 .- μ/6* Dx2( u+3*ϵ/4* u.^2) .- μ*ϵ/6 * u .* Dx2(u) .- 5*μ*ϵ/48 * Dx(u).^2
 	elseif scenario == 3
@@ -493,11 +504,11 @@ function IntegrateWGN(scenario;δ=0.1,N=2^11,L=3*π,T= 5,dt = 5/10^4,SGN=false,d
 	v= u - 1/3 ./h .* (DxF(h.^3 .*DxF(u)))
 
 	init     = Init(mesh,η,v)
-	model = WhithamGreenNaghdi(param;SGN=SGN, ktol=0, gtol=1e-12, iterate=true, precond = false, dealias = dealias)
+	model = WhithamGreenNaghdi(param;SGN=SGN, ktol=0, gtol=1e-12, iterate=iterate, precond = precond, dealias = dealias)
 	problem = Problem(model, init, param)
 	solve!( problem )
 
-	(ηfin,vfin,ufin)   =  mapfrofull(model,last(problem.data.U))
+	(ηfin,vfin,ufin)   =  model.mapfrofull(last(problem.data.U))
 	E(η,u,v) = sum(η.^2 .+ (1 .+ param.ϵ*η).*u.*v)
 	dE(η1,u1,v1,η2,u2,v2) = sum(η1.^2-η2.^2) + sum((1 .+ param.ϵ*η1).*u1.*v1 - (1 .+ param.ϵ*η2).*u2.*v2)
 
@@ -511,38 +522,27 @@ function IntegrateWGN(scenario;δ=0.1,N=2^11,L=3*π,T= 5,dt = 5/10^4,SGN=false,d
 	plot!(plt[1,2],mesh.x,real.(ifft(fftηfin));
 			title = string("surface deformation at time t=",problem.times.tfin),
 			label="")
-	if scenario == 1
-		xlims!(plt[1,2],(0,8))
-	end
 	display(plt)
 
-	if sav != []
-		savefig(string(sav,".pdf"));
-		p = plot(layout=(2,1))
-		save(problem,sav);
+	if name != nothing
+		savefig(string(name,".pdf"));
+		save(problem,name);
 		ts = problem.times.ts
 		x = mesh.x
 		k = mesh.k
-		us=zeros(param.N,length(ts));
+		zs=zeros(param.N,length(ts));
 		@showprogress 1 for i in 1:length(ts)
-			us[:,i].=real.(ifft(problem.data.U[i][:,1]))
+			zs[:,i].=real.(ifft(problem.data.U[i][:,1]))
 		end
-		plt=plot()
+		plt3=plot()
 		my_cg = cgrad([:blue,:green])
-		surface!(plt,x,ts,us',view_angle=(20,30), color = my_cg)
-		display(plt)
-		savefig(string(sav,"-evol.pdf"));
-		anim = @animate for i in range(1,length(ts))
-			plt = plot(layout=(1,2))
-			fftη=problem.data.U[i][:,1]
-			plot!(plt[1,1],fftshift(mesh.k),fftshift(log10.(abs.(fftη)));
-					title = "frequency",
-					label = "")
-			plot!(plt[1,2],mesh.x,real.(ifft(fftη));
-					title = string("surface at time t=",problem.times.ts[i]),
-					label="")
-		end
+		surface!(plt3,x,ts,zs',view_angle=(20,30), color = my_cg)
+		display(plt3)
+		savefig(string(name,"-evol.pdf"));
+		create_animation(problem;ylims=false,name=string(name,"-anim"))
 
-		gif(anim, string(sav,"-anim.gif"), fps=15); nothing
 	end
+	display(plt)
+	return problem,plt
 end
+nothing

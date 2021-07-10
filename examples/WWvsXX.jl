@@ -35,7 +35,7 @@ end
 
 #---- computation
 for problem in problems
-	solve2!( problem )
+	solve!( problem )
 end
 
 #---- visualization
@@ -43,6 +43,8 @@ include("../src/Figures.jl")
 #using Plots
 #gr()
 
-plot_solution(problems)
-savefig("WWvsXX.pdf"); nothing # hide
-create_animation(problems;name="WWvsXX")
+plt = plot_solution(problems)
+display(plt)
+savefig("WWvsXX.pdf")
+anim = create_animation(problems)
+gif(anim, "WWvsXX.gif", fps=15)

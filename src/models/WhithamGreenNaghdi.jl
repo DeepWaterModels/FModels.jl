@@ -1,205 +1,159 @@
-export WhithamGreenNaghdi,mapto,mapfro
-using LinearMaps,IterativeSolvers
+export WhithamGreenNaghdi
+using FFTW,LinearAlgebra,LinearMaps,IterativeSolvers
 
 """
     WhithamGreenNaghdi(param;kwargs)
 
-Defines an object of type `AbstractModel` in view of solving the initial-value problem for
+Define an object of type `AbstractModel` in view of solving the initial-value problem for
 the modified Green-Naghdi model proposed by V. Duchêne, S. Israwi and R. Talhouk.
 
 # Argument
 `param` is of type `NamedTuple` and must contain
 - dimensionless parameters `ϵ` (nonlinearity) and `μ` (dispersion);
-- numerical parameters to construct the mesh of collocation points as `mesh = Mesh(param)`
-E.g. `param = ( μ  = 0.1, ϵ  = 1, N  = 2^9, L  = 10*π)`
+- numerical parameters to construct the mesh of collocation points as `mesh = Mesh(param)`.
 
 ## Keywords
-- `SGN :: Bool`: if `true` computes the Serre-Green-Naghdi (SGN) instead of Whitham-Green-Naghdi (WGN) system (default is `false`);
-- `iterative :: Bool`: solves the elliptic problem through GMRES if `true`, LU decomposition if `false` (default is `true`);
-- `precond :: Bool`: Preconditioner of GMRES is based on WGN if `true`, SGN otherwise (default is `true`);
-- `gtol :: Real`: relative tolerance of the GMRES algorithm (default is `1e-14`);
-- `ktol :: Real`: tolerance of the Krasny filter (default is `0`, i.e. no filtering);
-- `dealias :: Int`: dealiasing with Orlicz rule `1-dealias/(dealias+2)` (default is `0`, i.e. no dealiasing).
+- `SGN`: if `true` computes the Serre-Green-Naghdi (SGN) instead of Whitham-Green-Naghdi (WGN) system (default is `false`);
+- `iterative`: solve the elliptic problem through GMRES if `true`, LU decomposition if `false` (default is `true`);
+- `precond`: use a (left) preconditioner for GMRES if `true` (default), choose `precond` as the preconditioner if provided;
+- `gtol`: relative tolerance of the GMRES algorithm (default is `1e-14`);
+- `restart`: the corresponding option of the GMRES algorithm (default is `100`);
+- `maxiter`: the corresponding option of GMRES (default is `nothing`);
+- `ktol`: tolerance of the Krasny filter (default is `0`, i.e. no filtering);
+- `dealias`: dealiasing with Orlicz rule `1-dealias/(dealias+2)` (default is `0`, i.e. no dealiasing);
+- `verbose`: prints information if `true` (default is `true`).
 
 # Return values
-This generates
-1. a function `WhithamGreenNaghdi` to be called in the time-integration solver;
-2. a function `mapto` which from `(η,v)` of type `InitialData` provides the  data matrix on which computations are to be executed.
-3. a function `mapfro` which from such data matrix returns the Tuple of real vectors `(η,v,u)`, where
+Generate necessary ingredients for solving an initial-value problem via `solve!` and in particular
+1. a function `WhithamGreenNaghdi.f!` to be called in the time-integration solver;
+2. a function `WhithamGreenNaghdi.mapto` which from `(η,v)` of type `InitialData` provides the raw data matrix on which computations are to be executed;
+3. a function `WhithamGreenNaghdi.mapfro` which from such data matrix returns the Tuple of real vectors `(η,v)`, where
 
     - `η` is the surface deformation;
     - `v` is the derivative of the trace of the velocity potential;
-    - `u` corresponds to the layer-averaged velocity.
+4. additionally, a handy function `WhithamGreenNaghdi.mapfrofull` which from data matrix returns the Tuple of real vectors `(η,v,u)`, where
+
+	- `u` corresponds to the layer-averaged velocity.
 
 """
 mutable struct WhithamGreenNaghdi <: AbstractModel
 
-    label   :: String
-	datasize:: Int
+	label   :: String
+	f!		:: Function
+	mapto	:: Function
+	mapfro	:: Function
+	mapfrofull	:: Function
 	param	:: NamedTuple
 	kwargs  :: NamedTuple
-	μ 		:: Real
-	ϵ 		:: Real
-	x   	:: Vector{Float64}
-    F₀   	:: Vector{Complex{Float64}}
-    ∂ₓ      :: Vector{Complex{Float64}}
-    Π⅔      :: Vector{Float64}
-	Id 	    :: BitArray{2}
-	FFT 	:: Array{Complex{Float64},2}
-	IFFT 	:: Array{Complex{Float64},2}
-	IFFTF₀ 	:: Array{Complex{Float64},2}
-	M₀      :: Array{Complex{Float64},2}
-    h    	:: Vector{Complex{Float64}}
-	u    	:: Vector{Complex{Float64}}
-	fftv    :: Vector{Complex{Float64}}
-	fftη   	:: Vector{Complex{Float64}}
-	fftu  	:: Vector{Complex{Float64}}
-	hdu    	:: Vector{Complex{Float64}}
-	L   	:: Array{Complex{Float64},2}
-	Precond :: Any
-	iterate :: Bool
-	ktol 	:: Real
-	gtol 	:: Real
 
-
-    function WhithamGreenNaghdi(param::NamedTuple;iterate=true,SGN=false,dealias=0,ktol=0,gtol=1e-14,precond=true)
+    function WhithamGreenNaghdi(param::NamedTuple;SGN=false,dealias=0,ktol=0,iterate=true,gtol=1e-14,precond=true,restart=nothing,maxiter=nothing,verbose=true)
 		if SGN == true
 			label = string("Serre-Green-Naghdi")
 		else
 			label = string("Whitham-Green-Naghdi")
 		end
-		@info label
+		if verbose @info string("model ",label) end
 
-		datasize = 2
-		kwargs = (iterate=iterate,SGN=SGN,dealias=dealias,ktol=ktol,gtol=gtol,precond=precond)
+		kwargs = (iterate=iterate,SGN=SGN,dealias=dealias,ktol=ktol,gtol=gtol,precond=precond,verbose=verbose)
 		μ 	= param.μ
 		ϵ 	= param.ϵ
 		mesh = Mesh(param)
+		param = ( ϵ = ϵ, μ = μ, xmin = mesh.xmin, xmax = mesh.xmax, N = mesh.N )
+
 		k = mesh.k
 		x 	= mesh.x
 		x₀ = mesh.x[1]
 
 		∂ₓ	=  1im * mesh.k
 		F₁ 	= tanh.(sqrt(μ)*abs.(k))./(sqrt(μ)*abs.(k))
-		F₁[1] 	= 1                 # Differentiation
+		F₁[1] 	= 1
 		if SGN == true
-	                F₀ = sqrt(μ)*∂ₓ
+			F₀ = sqrt(μ)*∂ₓ
 	    else
-	                F₀ = 1im * sqrt.(3*(1 ./F₁ .- 1)).*sign.(k)
+			F₀ = 1im * sqrt.(3*(1 ./F₁ .- 1)).*sign.(k)
 		end
 		if precond == true
-			Precond = Diagonal( 1 ./  F₁ )
+			Precond = Diagonal( 1 .+ μ/3*k.^2 ) #Diagonal( 1 ./  F₁ )
+		elseif precond == false
+			Precond = Diagonal( ones(size(k)) )
 		else
-			Precond = Diagonal( 1 .+ μ/3*k.^2 )
-			#Precond = lu( exp.(-1im*k*x') ) # #Diagonal( ones(size(k)) )
+			Precond = precond
 		end
 		K = mesh.kmax * (1-dealias/(2+dealias))
 		Π⅔ 	= abs.(mesh.k) .<= K # Dealiasing low-pass filter
 		if dealias == 0
-			@info "no dealiasing"
+			if verbose @info "no dealiasing" end
 			Π⅔ 	= ones(size(mesh.k))
-		else
-			@info "dealiasing"
+		elseif verbose
+			@info string("dealiasing : spectral scheme for power ", dealias + 1," nonlinearity ")
 		end
-		if iterate == true
-			@info "GMRES method"
-		else
-			@info "LU decomposition"
+		if iterate == true && verbose
+			@info "elliptic problem solved with GMRES method"
+		elseif verbose
+			@info "elliptic problem solved with LU decomposition"
 		end
 		FFT = exp.(-1im*k*(x.-x₀)');
         IFFT = exp.(1im*k*(x.-x₀)')/length(x);
-		M₀ = IFFT * Diagonal( F₀ ) * FFT
-		IFFTF₀ = IFFT * Diagonal( F₀ )
+		M₀ = IFFT * Diagonal( F₀ .* Π⅔)* FFT
+		IFFTF₀ = IFFT * Diagonal( F₀ .* Π⅔)
         Id = Diagonal(ones(size(x)));
 		h = zeros(Complex{Float64}, mesh.N)
 		u, fftv, fftη, fftu, hdu = (similar(h),).*ones(5)
 		L = similar(FFT)
-
-        new(label, datasize, param, kwargs, μ, ϵ, x, F₀, ∂ₓ, Π⅔, Id, FFT, IFFT, IFFTF₀, M₀, h, u, fftv, fftη, fftu, hdu, L, Precond, iterate, ktol, gtol )
-    end
-end
+		if maxiter == nothing maxiter = mesh.N end
+		if restart == nothing restart = min(20,mesh.N) end
 
 
-function (m::WhithamGreenNaghdi)(U::Array{Complex{Float64},2})
-	m.fftη .= U[:,1]
-	m.h .= 1 .+ m.ϵ*ifft(m.fftη)
-	m.fftv .= U[:,2]
-	#m.fftv[abs.(m.fftv).< m.ktol ].=0   # Krasny filter
-	if m.iterate == false
-		m.L .= m.Id - 1/3 * m.FFT * Diagonal( 1 ./m.h ) * m.M₀ * Diagonal( m.h.^3 ) * m.IFFTF₀
-		m.fftu .= m.L \ m.fftv
-	elseif m.iterate == true
-        function LL(hatu)
-            hatu- 1/3 *m.Π⅔.*fft( 1 ./m.h .* ifft( m.F₀ .* m.Π⅔.*fft( m.h.^3 .* ifft( m.F₀ .* hatu ) ) ) )
+		# Evolution equations are ∂t U = f!(U)
+		function f!(U)
+			fftη .= U[:,1]
+			h .= 1 .+ ϵ*ifft(fftη)
+			fftv .= U[:,2]
+			if iterate == false
+				L .= Id - 1/3 * Diagonal(Π⅔) * FFT * Diagonal( 1 ./h ) * M₀ * Diagonal( h.^3 ) * IFFTF₀
+				fftu .= L \ fftv
+			elseif iterate == true
+		        function LL(hatu)
+		            hatu- 1/3 *Π⅔.*fft( 1 ./h .* ifft( F₀ .* Π⅔.*fft( h.^3 .* ifft( F₀ .* Π⅔.* hatu ) ) ) )
+				end
+				fftu .= gmres( LinearMap(LL, length(h); issymmetric=false, ismutating=false) , fftv ;
+						restart = restart, maxiter = maxiter, Pl = Precond, reltol = gtol )
+			end
+			u .= ifft(fftu)
+			hdu .= h .* ifft(Π⅔.*F₀.*fftu)
+		   	U[:,1] .= -∂ₓ.*Π⅔.*(fftu .+ ϵ * fft(ifft(fftη) .* u))
+			U[:,2] .= -∂ₓ.*Π⅔.*(fftη .+ ϵ * fft( u.*ifft(fftv)
+							.- 1/2 * u.^2 .- 1/2 * hdu.^2 ) )
+			U[abs.(U).< ktol ].=0
 		end
-		m.fftu .= gmres( LinearMap(LL, length(m.h); issymmetric=false, ismutating=false) , m.fftv ;
-				Pl = m.Precond,
-				tol = m.gtol )
-	end
-	m.u .= ifft(m.fftu)
-	m.hdu .= m.h .* ifft(m.Π⅔.*m.F₀.*m.fftu)
-   	U[:,1] .= -m.∂ₓ.*m.Π⅔.*(m.fftu .+ m.ϵ * fft(ifft(m.fftη) .* m.u))
-	U[:,2] .= -m.∂ₓ.*m.Π⅔.*(m.fftη .+ m.ϵ * fft( m.u.*ifft(m.fftv)
-					.- 1/2 * m.u.^2 .- 1/2 * m.hdu.^2 ) )
-	U[abs.(U).< m.ktol ].=0
-end
 
-"""
-    mapto(WhithamGreenNaghdi, data)
-`data` is of type `InitialData`, maybe constructed by `Init(...)`.
+		# Discrete Fourier transform with, possibly, dealiasing and Krasny filter.
+		function mapto(data::InitialData)
+			U = [Π⅔ .* fft(data.η(x)) Π⅔ .*fft(data.v(x))]
+			U[abs.(U).< ktol ].=0
+			return U
+		end
 
-Performs a discrete Fourier transform with, possibly, dealiasing and Krasny filter.
+		# Return `(η,v)`, where
+		# - `η` is the surface deformation;
+		# - `v` is the derivative of the trace of the velocity potential.
+		# Inverse Fourier transform and takes the real part.
+		function mapfro(U)
+			real(ifft(U[:,1])),real(ifft(U[:,2]))
+		end
+		# Returns `(η,v,u)`, where
+		# - `η` is the surface deformation;
+		# - `v` is the derivative of the trace of the velocity potential;
+		# - `u` corresponds to the layer-averaged velocity.
+		# Inverse Fourier transform and take the real part, plus solves the costly elliptic problem for `u`.
+		function mapfrofull(U)
+				fftη .= U[:,1]
+			   	h .= 1 .+ ϵ*ifft(fftη)
+				L .= Id - 1/3 * Diagonal(Π⅔) * FFT * Diagonal( 1 ./h ) * M₀ * Diagonal( h.^3 ) * IFFTF₀
 
-See documentation of `WhithamGreenNaghdi` for more details.
+				   real(ifft(U[:,1])),real(ifft(U[:,2])),real(ifft(L \ U[:,2]))
+		end
 
-"""
-function mapto(m::WhithamGreenNaghdi, data::InitialData)
-
-	U = [m.Π⅔ .* fft(data.η(m.x)) m.Π⅔ .*fft(data.v(m.x))]
-	# m.fftη .= U[:,1]
-	# m.h .= 1 .+ m.ϵ*ifft(m.fftη)
-	# m.L .= m.Id - 1/3 * m.FFT * Diagonal( 1 ./m.h ) * m.M₀ * Diagonal( m.h.^3 ) * m.IFFTF₀
-	# m.Precond = lu(m.L)
-	U[abs.(U).< m.ktol ].=0
-	return U
-
-end
-
-"""
-    mapfro(WhithamGreenNaghdi, data)
-`data` is of type `Array{Complex{Float64},2}`, e.g. `last(p.data.U)` where `p` is of type `Problem`.
-
-Returns `(η,v)`, where
-- `η` is the surface deformation;
-- `v` is the derivative of the trace of the velocity potential.
-
-Performs an inverse Fourier transform and takes the real part.
-
-See documentation of `WhithamGreenNaghdi` for more details.
-"""
-function mapfro(m::WhithamGreenNaghdi,
-	       datum::Array{Complex{Float64},2})
-
-		   real(ifft(datum[:,1])),real(ifft(datum[:,2]))
-end
-"""
-    mapfrofull(WhithamGreenNaghdi, data)
-`data` is of type `Array{Complex{Float64},2}`, e.g. `last(p.data.U)` where `p` is of type `Problem`.
-
-Returns `(η,v,u)`, where
-- `η` is the surface deformation;
-- `v` is the derivative of the trace of the velocity potential;
-- `u` corresponds to the layer-averaged velocity.
-
-Performs an inverse Fourier transform and take the real part, plus solves the costly elliptic problem for `u`.
-
-See documentation of `WhithamGreenNaghdi` for more details.
-"""
-function mapfrofull(m::WhithamGreenNaghdi,
-	       datum::Array{Complex{Float64},2})
-		m.fftη .= datum[:,1]
-	   	m.h .= 1 .+ m.ϵ*ifft(m.fftη)
-		m.L .= m.Id - 1/3 * m.FFT * Diagonal( 1 ./m.h ) * m.M₀ * Diagonal( m.h.^3 ) * m.IFFTF₀
-
-		   real(ifft(datum[:,1])),real(ifft(datum[:,2])),real(ifft(m.L \ datum[:,2]))
+        new(label, f!, mapto, mapfro, mapfrofull, param, kwargs)
+    end
 end

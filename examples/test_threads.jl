@@ -3,11 +3,11 @@
 #md # [`notebook`](@__NBVIEWER_ROOT_URL__notebooks/WWvsXX.ipynb)
 #
 using ShallowWaterModels;
+include("../src/models/WaterWaves.jl")
+include("../src/models/PseudoSpectral.jl")
 using Test
 using TimerOutputs
 import Base.Threads: @threads, @sync, @async, @spawn, nthreads, threadid
-# if there is an error at this step, try commenting the lines above and commenting out the line below
-#include("../src/dependencies.jl")
 
 function run_models()
 
@@ -24,13 +24,13 @@ function run_models()
     g(x) = exp.(-abs.(x).^4);
     z(x) = 0*exp.(-x.^2);
     init = Init(g,z);
-    
+
     #---- models to compare
     models=[]
     push!(models,WaterWaves(param))
     push!(models,PseudoSpectral(param;order=2,dealias=1,lowpass=1/100))
     push!(models,PseudoSpectral(param;order=3,dealias=1,lowpass=1/100))
-    
+
     #---- Initialize
     function Problems(models)
     	problems = []
@@ -39,23 +39,14 @@ function run_models()
     	end
     	return problems
     end
-    
-    #---- visualization
-    function Plot_problems(problems)
-    	p=plot(layout=(2,1))
-    	for problem in problems
-    		fig_problem!( p, problem)
-    	end
-    	display(p)
-    end
-    
+
     #---- Method 1
     @timeit "Method 1 with threads" begin
         problems=Problems(models)
         solve!(problems)
         p1=(last(problems[1].data.U), last(problems[2].data.U) ,last(problems[3].data.U))
     end
-    
+
     #---- Method 2
     @timeit "Method 2 with threads" begin
         problems=Problems(models)
@@ -64,7 +55,7 @@ function run_models()
         end
         p2=(last(problems[1].data.U), last(problems[2].data.U) ,last(problems[3].data.U))
     end
-    
+
     #---- Method 3
     @timeit "Consecutive solving" begin
         problems=Problems(models)

@@ -66,8 +66,13 @@ struct Mesh
 
     function Mesh(param :: NamedTuple)
 
-        xmin = - param.L
-        xmax =   param.L
+        if :xmin in keys(param) && :xmax in keys(param)
+            xmin = param.xmin
+            xmax = param.xmax
+        else
+            xmin = - param.L
+            xmax =   param.L
+        end
         N    =   param.N
 
         Mesh( xmin, xmax, N)

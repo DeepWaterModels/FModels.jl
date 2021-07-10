@@ -5,6 +5,8 @@
 
 using Distributed
 using ShallowWaterModels
+include("../src/models/WaterWaves.jl")
+include("../src/models/PseudoSpectral.jl")
 
 rmprocs(workers())
 addprocs(3)
@@ -13,6 +15,9 @@ addprocs(3)
     using Pkg
     Pkg.activate(".")
     using ShallowWaterModels
+    include("../src/models/WaterWaves.jl")
+    include("../src/models/PseudoSpectral.jl")
+
 
 end
 
@@ -46,7 +51,7 @@ function run_simulation()
         push!(models,PseudoSpectral(param;order=2,dealias=1,lowpass=1/100))
         push!(models,PseudoSpectral(param;order=3,dealias=1,lowpass=1/100))
 
-    
+
         function solve_problem(model)
             problem = Problem(model, init, param)
             ShallowWaterModels.solve!(problem)
@@ -62,7 +67,7 @@ function run_simulation()
             push!(p2, solve_problem(model))
         end
     end
-    
+
     @timeit "Distributed" begin
 
         rc = RemoteChannel(()->Channel(3));

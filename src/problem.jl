@@ -1,3 +1,4 @@
+using ProgressMeter
 export Problem
 
 """
@@ -58,6 +59,13 @@ mutable struct Problem
 
         data  = Data(model.mapto(initial))
 
+        # A basic check
+        try
+            step!(solver, model, copy(last(data.U)), 1)
+        catch
+            @warn "The model and the solver are incompatible. solve! will not work."
+        end
+
         new(model, initial, param, solver, times, mesh, data)
 
     end
@@ -108,61 +116,6 @@ function solve!(problem :: Problem;verbose=true::Bool)
         for j in 1:problem.times.Ns-1
             @showprogress string("Step ",j,"/",problem.times.Ns-1,"...") 1 for l in 1:problem.times.ns[j]
                 step!(solver, model, U, dt)
-            end
-            push!(data,copy(U))
-            println()
-
-        end
-    end
-
-    println()
-
-end
-
-export solve2!
-
-"""
-    solve2!( problem; verbose=true )
-
-Solves (i.e. integrates in time) an initial-value problem
-
-The argument `problem` should be of type `Problem`.
-It may be buit, e.g., by `Problem(model, initial, param)`
-
-Information are not printed if keyword `verbose = false` (default is `true`).
-
-"""
-function solve2!(problem :: Problem;verbose=true::Bool)
-
-    if verbose == true
-        @info string("\nNow solving the initial-value problem for model ",problem.model.label,"\n",
-            "with parameters\n",problem.param)
-    end
-
-    U = copy(last(problem.data.U))
-
-    dt     = problem.times.dt
-    solver = problem.solver
-    model  = problem.model
-    data   = problem.data.U
-
-    if problem.times.tc == problem.times.ts
-        @showprogress 1 for j in 1:problem.times.Ns-1
-            step!(solver, model.f!, U, dt)
-            push!(data,copy(U))
-        end
-
-    elseif length(problem.times.ts) > 25
-        @showprogress 1 for j in 1:problem.times.Ns-1
-            for l in 1:problem.times.ns[j]
-                step!(solver, model.f!, U, dt)
-            end
-            push!(data,copy(U))
-        end
-    else
-        for j in 1:problem.times.Ns-1
-            @showprogress string("Step ",j,"/",problem.times.Ns-1,"...") 1 for l in 1:problem.times.ns[j]
-                step2!(solver, model.f!, U, dt)
             end
             push!(data,copy(U))
             println()

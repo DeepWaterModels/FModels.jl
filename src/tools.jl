@@ -1,7 +1,7 @@
 export interpolate,solution
 
 """
-    interpolate(mesh,vector;k=2^4)
+    interpolate(mesh,vector;n=2^4)
 
 Interpolate a vector `vector` defined on a uniform collocation grid defined by `mesh`.
 
@@ -46,7 +46,7 @@ end
 
 
 """
-    solution(p::Problem;t,x)
+    solution(p::Problem;t,x,interpol)
 
 Gives the solution of a solved initial-value at a given time `t`.
 
@@ -54,6 +54,8 @@ Gives the solution of a solved initial-value at a given time `t`.
 - Argument `p` is of type `Problem`.
 - Keyword argument `t` is optional, the last computed time is returned by default.
 - Keyword argument `x` is optional, if provided the solution is interpolated to the collocation vector `x`.
+- Keyword argument `interpol` is optional, if an integer is provided the solution is interpolated on as many collocation points (if `true`, then the default value `2^3` is chosen).
+
 
 # Return values
 Provides `(η,v,x,t)` where
@@ -64,7 +66,7 @@ Provides `(η,v,x,t)` where
 
 """
 
-function solution(p::Problem; t=nothing, x=nothing)
+function solution(p::Problem; t=nothing, x=nothing, interpol = false)
 	if t == nothing t = p.times.tfin end
 	t=min(max(t,0),p.times.tfin)
 	index = indexin(false,p.times.ts.<t)[1]
@@ -83,6 +85,15 @@ function solution(p::Problem; t=nothing, x=nothing)
 			v = interpolate(mesh,v,x)
 		else
 			x=mesh.x
+		end
+		if interpol == true
+			new_mesh,η = interpolate(mesh,η)
+			new_mesh,v = interpolate(mesh,v)
+			x = new_mesh.x
+		elseif isa(interpol,Int)
+			new_mesh,η = interpolate(mesh,η;n=interpol)
+			new_mesh,v = interpolate(mesh,v;n=interpol)
+			x = new_mesh.x
 		end
 	end
 	return (η,v,x,t)

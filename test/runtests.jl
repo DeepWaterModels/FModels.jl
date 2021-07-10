@@ -2,8 +2,12 @@ ENV["GKSwstype"]="100"
 
 using Test
 using ShallowWaterModels
-#include("../src/dependencies.jl")
-using JLD
+include("../src/initialdata/BellCurve.jl")
+#include("../src/models/WhithamGreenNaghdi.jl")
+#include("../src/models/PseudoSpectral.jl")
+include_all("models") # I do not understand why this line cannot be replaced by the above two
+include("../src/LoadSave.jl")
+#using JLD
 
 param = ( ϵ  = 1/2, μ = 1, θ = 1)
 paramX= ( N  = 2^8, L  = 10)
@@ -22,7 +26,8 @@ problem1 = Problem( model, init, merge(paramT,paramX); solver = RK4(paramX) )
     pload = load("testsave")
 
     @test true
-    @test pload.model.kwargs.ktol == 1e-10
+    @test pload.model.kwargs == problem1.model.kwargs
+    @test pload.solver.Uhat == problem1.solver.Uhat
 
 end
 
