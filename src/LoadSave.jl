@@ -103,6 +103,8 @@ end
 
 import JLD.save
 
+export save
+
 """
     `save(p::Problem,name::String)`
 
@@ -116,7 +118,7 @@ function save(p::Problem,name::String)
 
 end
 
-import JLD.load
+export loadpb
 
 """
     `loadpb(name::String)`
