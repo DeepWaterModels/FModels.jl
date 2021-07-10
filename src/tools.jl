@@ -75,10 +75,10 @@ function solution(p::Problem; t=nothing, x=nothing, interpol = false)
 		if x != nothing
 			@error "cannot interpolate non-regularly spaced mesh."
 		end
-		(x,η,v) = mapfro(p.model,p.data.U[index])
+		(x,η,v) = (p.model.mapfro)(p.data.U[index])
 
 	else
-    	(η,v) = mapfro(p.model,p.data.U[index])
+    	(η,v) = (p.model.mapfro)(p.data.U[index])
 		mesh=p.mesh
 		if x != nothing
 			η = interpolate(mesh,η,x)
