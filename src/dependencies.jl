@@ -15,7 +15,9 @@ include("solvers/RK4.jl")
 include("tools.jl")
 include("LoadSave.jl")
 
+include("Figures.jl")
 include("initialdata/BellCurve.jl")
+include("models/WaterWaves.jl")
 include("models/WhithamGreenNaghdi.jl")
 include("models/PseudoSpectral.jl")
 
